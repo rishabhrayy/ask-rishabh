@@ -149,7 +149,7 @@ export async function embed(provider: Provider, texts: string[], { timeoutMs = 1
       method: 'POST',
       signal: AbortSignal.timeout(timeoutMs),
       headers: { 'content-type': 'application/json', authorization: `Bearer ${provider.apiKey}` },
-      body: JSON.stringify({ model: provider.model, input: texts.slice(i, i + 96) }),
+      body: JSON.stringify({ model: provider.model, input: texts.slice(i, i + 96), ...provider.extraBody }),
     });
     if (!res.ok) throw new Error(`${provider.name} embeddings ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const json = (await res.json()) as { data: { embedding: number[]; index: number }[] };
