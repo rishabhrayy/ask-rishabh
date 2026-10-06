@@ -28,6 +28,8 @@ export type Provider = {
   model: string;
   /** Reasoning models spend tokens before answering, so they need a bigger budget */
   maxTokens?: number;
+  /** Extra request fields for this provider, e.g. { reasoning_effort: 'low' } */
+  extraBody?: Record<string, unknown>;
 };
 
 /** What /api/ask streams back, one JSON object per line. */

@@ -173,3 +173,46 @@ describe('house style', () => {
     expect(text).toBe('RAY/OS is a second brain - built on Claude [1].');
   });
 });
+
+describe('resilience', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('retries a busy provider once before moving on', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => (++calls === 1 ? new Response('busy', { status: 429 }) : sse('Answer [1].'))));
+    const { done } = await collect(ask('Which project won the expo?', { index, providers: [provider('groq'), provider('gemini')] }));
+    expect(done).toMatchObject({ mode: 'model', provider: 'groq' });
+    expect(calls).toBe(2);
+  });
+
+  it('does not retry a provider that rejected the request outright', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      urls.push(url);
+      return url.includes('groq') ? new Response('{"error":{"code":"model_not_found"}}', { status: 404 }) : sse('Answer [1].');
+    }));
+    const { done } = await collect(ask('Which project won the expo?', { index, providers: [provider('groq'), provider('gemini')] }));
+    expect(done).toMatchObject({ provider: 'gemini' });
+    expect(urls.filter((u) => u.includes('groq'))).toHaveLength(1);
+  });
+
+  it('treats reasoning chunks as signs of life, not silence', async () => {
+    const enc = new TextEncoder();
+    const body = new ReadableStream({
+      async start(c) {
+        // three "thinking" chunks with no answer text, each inside the silence window
+        for (let i = 0; i < 3; i++) {
+          c.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { reasoning: 'hmm' } }] })}\n\n`));
+          await new Promise((r) => setTimeout(r, 60));
+        }
+        c.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: 'Done [1].' } }] })}\n\ndata: [DONE]\n\n`));
+        c.close();
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body)));
+    const { streamChat } = await import('../src/providers.ts');
+    const out: string[] = [];
+    for await (const t of streamChat(provider('groq'), [], { silenceMs: 100, maxWaitMs: 2000 })) out.push(t);
+    expect(out.join('')).toBe('Done [1].');
+  });
+});

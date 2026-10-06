@@ -1,7 +1,7 @@
 import { expandQuery, tokenize } from './bm25.ts';
 import { guard } from './guard.ts';
 import { buildMessages } from './prompt.ts';
-import { embed, streamChat } from './providers.ts';
+import { embed, isTransient, streamChat } from './providers.ts';
 import { retrieve, type SearchIndex } from './retrieve.ts';
 import type { AskEvent, Hit, Provider } from './types.ts';
 
@@ -13,6 +13,8 @@ export type AskOptions = {
   embedder?: Provider | null;
   k?: number;
   signal?: AbortSignal;
+  /** Time for the whole answer across providers before falling back (default 30 s) */
+  budgetMs?: number;
   /** Called when a provider or the embedder fails, with no question text, so it is safe to log */
   onError?: (stage: string, error: Error) => void;
 };
@@ -53,24 +55,35 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
   yield { type: 'sources', sources: sourcesFor(hits) };
 
   const messages = buildMessages(question, hits);
+  // The whole answer has a time budget: a visitor should get the fallback within it rather
+  // than wait through every provider's full timeout one after another
+  const start = Date.now();
+  const budget = opts.budgetMs ?? 30000;
+  const remaining = () => budget - (Date.now() - start);
+
   for (const provider of opts.providers) {
-    let wrote = false;
-    try {
-      for await (const text of streamChat(provider, messages, { signal: opts.signal })) {
-        wrote = true;
-        yield { type: 'delta', text };
-      }
-      yield { type: 'done', mode: 'model', provider: provider.name };
-      return;
-    } catch (error) {
-      opts.onError?.(`chat:${provider.name}`, error as Error);
-      if (wrote) {
-        // The answer was cut off mid-way: say so rather than silently ending
-        yield { type: 'delta', text: ' (The answer was cut short. The sources below have the rest.)' };
+    // One quick retry on the same provider for a rate limit, overload or timeout
+    for (let attempt = 0; attempt < 2 && remaining() > 2000; attempt++) {
+      let wrote = false;
+      try {
+        const maxWaitMs = Math.min(20000, remaining());
+        for await (const text of streamChat(provider, messages, { signal: opts.signal, maxWaitMs })) {
+          wrote = true;
+          yield { type: 'delta', text };
+        }
         yield { type: 'done', mode: 'model', provider: provider.name };
         return;
+      } catch (error) {
+        opts.onError?.(`chat:${provider.name}${attempt ? ':retry' : ''}`, error as Error);
+        if (wrote) {
+          // The answer was cut off mid-way: say so rather than silently ending
+          yield { type: 'delta', text: ' (The answer was cut short. The sources below have the rest.)' };
+          yield { type: 'done', mode: 'model', provider: provider.name };
+          return;
+        }
+        if (!isTransient(error as Error) || opts.signal?.aborted) break; // not worth retrying here
+        await new Promise((r) => setTimeout(r, 400));
       }
-      // Nothing written yet, so the next provider can answer cleanly
     }
   }
 

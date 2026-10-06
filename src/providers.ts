@@ -2,20 +2,35 @@ import type { Provider } from './types.ts';
 
 type Message = { role: 'system' | 'user' | 'assistant'; content: string };
 
+export type StreamOptions = {
+  /** Give up if the provider sends nothing at all for this long (connection or queue stalled) */
+  silenceMs?: number;
+  /** Give up if no answer text has started by then, even while a reasoning model is still thinking */
+  maxWaitMs?: number;
+  signal?: AbortSignal;
+};
+
 /**
  * Streams a chat completion from any OpenAI-compatible endpoint (Groq, Gemini's compatibility
- * endpoint, OpenRouter...). Yields text as it arrives. Throws if the request fails or no text
- * arrives within `firstTokenMs`, so the caller can move on to the next provider.
+ * endpoint, OpenRouter...). Yields answer text as it arrives. Throws if the request fails, the
+ * stream goes silent for `silenceMs`, or no answer has started within `maxWaitMs`, so the
+ * caller can move on to the next provider. Reasoning models stream their thinking first; those
+ * chunks count as signs of life, so a long think is not mistaken for a dead connection.
  */
 export async function* streamChat(
   provider: Provider,
   messages: Message[],
-  { firstTokenMs = 9000, signal }: { firstTokenMs?: number; signal?: AbortSignal } = {},
+  { silenceMs = 8000, maxWaitMs = 20000, signal }: StreamOptions = {},
 ): AsyncGenerator<string> {
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal?.addEventListener('abort', abort);
-  const timer = setTimeout(abort, firstTokenMs);
+  let silence = setTimeout(abort, silenceMs);
+  const deadline = setTimeout(abort, maxWaitMs);
+  const alive = () => {
+    clearTimeout(silence);
+    silence = setTimeout(abort, silenceMs);
+  };
   try {
     const res = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
@@ -27,6 +42,7 @@ export async function* streamChat(
         stream: true,
         temperature: 0.2,
         max_tokens: provider.maxTokens ?? 600,
+        ...provider.extraBody,
       }),
     });
     if (!res.ok || !res.body) {
@@ -42,6 +58,7 @@ export async function* streamChat(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      alive();
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
@@ -59,16 +76,22 @@ export async function* streamChat(
         if (!text) continue;
         if (!started) {
           started = true;
-          clearTimeout(timer); // the first-token deadline is met; let the answer finish
+          clearTimeout(deadline); // the answer has started; only silence can stop it now
         }
         yield text;
       }
     }
     if (!started) throw new Error(`${provider.name}: empty reply`);
   } finally {
-    clearTimeout(timer);
+    clearTimeout(silence);
+    clearTimeout(deadline);
     signal?.removeEventListener('abort', abort);
   }
+}
+
+/** Worth one quick retry on the same provider: rate limits, overload and timeouts. */
+export function isTransient(error: Error): boolean {
+  return error.name === 'AbortError' || /\b(429|500|502|503|504)\b/.test(error.message);
 }
 
 /** Reasoning models may stream "<think>...</think>" before the answer. Visitors should not see it. */
