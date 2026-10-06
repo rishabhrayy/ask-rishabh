@@ -1,6 +1,7 @@
 import { expandQuery, tokenize } from './bm25.ts';
 import { guard } from './guard.ts';
-import { BLOCKED_REPLY, outputFilter } from './outputguard.ts';
+import { resolveDomain, type Domain } from './domain.ts';
+import { outputFilter } from './outputguard.ts';
 import { buildMessages, makeCanary } from './prompt.ts';
 import { embed, isTransient, streamChat } from './providers.ts';
 import { retrieve, type SearchIndex } from './retrieve.ts';
@@ -8,7 +9,15 @@ import { smallTalk } from './smalltalk.ts';
 import type { AskEvent, Hit, Provider } from './types.ts';
 
 export type AskOptions = {
-  index: SearchIndex;
+  /** The in-memory index; optional when a custom search function is given */
+  index?: SearchIndex;
+  /**
+   * A custom search, e.g. Postgres with pgvector. Receives the question and its embedding (or
+   * null if embedding failed) and returns ranked hits. Defaults to the in-memory hybrid search.
+   */
+  search?: (question: string, vector: number[] | null, k: number) => Promise<Hit[]>;
+  /** What the assistant is about: prompt, off-limits topics, reply wording (default: the site) */
+  domain?: Partial<Domain>;
   /** Tried in order; the next one is used only if the previous fails before writing anything */
   providers: Provider[];
   /** Embeds the question for hybrid search; skipped (keyword search only) if absent or slow */
@@ -27,16 +36,14 @@ export type AskOptions = {
   overviewIds?: string[];
 };
 
-const NOT_FOUND =
-  "I couldn't find that on the site. It covers Rishabh's projects, skills, experience and how he works. For anything else, email hi@rishabhray.me.";
-
 /**
  * Answers a question as a stream of events: the sources first, then the answer text.
  * Every failure has a defined outcome: a guarded refusal, a "not on the site" reply, the next
  * provider, or, when every model is down, the relevant passages themselves. It never just errors.
  */
 export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerator<AskEvent> {
-  const checked = guard(rawQuestion);
+  const domain = resolveDomain(opts.domain);
+  const checked = guard(rawQuestion, domain);
   if (!checked.ok) {
     yield { type: 'delta', text: checked.reply };
     yield { type: 'done', mode: 'refused', reason: checked.reason };
@@ -45,7 +52,7 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
   const question = checked.question;
 
   // Greetings, thanks, "help", "start over", "ummm": answered instantly, no search or model
-  const chat = smallTalk(question);
+  const chat = smallTalk(question, domain.smallTalk);
   if (chat) {
     yield { type: 'delta', text: chat.reply };
     yield { type: 'done', mode: 'smalltalk', reason: chat.kind };
@@ -53,7 +60,7 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
   }
 
   let queryVector: number[] | null = null;
-  if (opts.embedder && opts.index.embeddings) {
+  if (opts.embedder && (opts.search || opts.index?.embeddings)) {
     try {
       [queryVector] = await embed(opts.embedder, [question], { timeoutMs: 2500 });
     } catch (error) {
@@ -62,16 +69,17 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
     }
   }
 
-  let hits = retrieve(opts.index, question, queryVector, opts.k ?? 5);
+  const k = opts.k ?? 5;
+  let hits = opts.search ? await opts.search(question, queryVector, k) : opts.index ? retrieve(opts.index, question, queryVector, k) : [];
   // Nothing matched: fall back to the overview passages and let the model judge relevance.
   // With no model available, the extractive answer then simply links those sections.
-  if (!hits.length && opts.overviewIds?.length) {
+  if (!hits.length && opts.overviewIds?.length && opts.index) {
     hits = opts.overviewIds
-      .flatMap((id) => opts.index.passages.filter((p) => p.docId === id).slice(0, 1))
+      .flatMap((id) => opts.index!.passages.filter((p) => p.docId === id).slice(0, 1))
       .map((passage) => ({ passage, score: 0 }));
   }
   if (!hits.length) {
-    yield { type: 'delta', text: NOT_FOUND };
+    yield { type: 'delta', text: domain.notFound };
     yield { type: 'done', mode: 'refused', reason: 'not_found' };
     return;
   }
@@ -79,7 +87,7 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
 
   // A fresh canary per request: it can only appear in an answer if the prompt is leaking
   const canary = makeCanary();
-  const messages = buildMessages(question, hits, canary);
+  const messages = buildMessages(question, hits, canary, domain.systemPrompt);
   // The whole answer has a time budget: a visitor should get the fallback within it rather
   // than wait through every provider's full timeout one after another
   const start = Date.now();
@@ -91,7 +99,7 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
     for (let attempt = 0; attempt < 2 && remaining() > 2000; attempt++) {
       let wrote = false;
       // Every answer passes the output check: a leak or markup replaces it before it is shown
-      const filter = outputFilter(canary);
+      const filter = outputFilter(canary, 80, domain.leakSignatures, domain.allowedHosts);
       try {
         const maxWaitMs = Math.min(20000, remaining());
         for await (const text of streamChat(provider, messages, { signal: opts.signal, maxWaitMs })) {
@@ -103,7 +111,7 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
         const tail = filter.flush();
         if (tail === null) {
           const verdict = filter.verdict;
-          yield { type: 'replace', text: BLOCKED_REPLY };
+          yield { type: 'replace', text: domain.blockedReply };
           yield { type: 'done', mode: 'blocked', provider: provider.name, reason: verdict.ok ? undefined : verdict.reason };
           return;
         }

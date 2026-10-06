@@ -39,9 +39,9 @@ const RULES: [SmallTalk['kind'], RegExp, string][] = [
   ],
 ];
 
-export function smallTalk(question: string): SmallTalk | null {
+export function smallTalk(question: string, replies?: Partial<Record<SmallTalk['kind'], string>>): SmallTalk | null {
   const q = question.trim();
   if (q.length > 40) return null;
-  for (const [kind, pattern, reply] of RULES) if (pattern.test(q)) return { kind, reply };
+  for (const [kind, pattern, reply] of RULES) if (pattern.test(q)) return { kind, reply: replies?.[kind] ?? reply };
   return null;
 }

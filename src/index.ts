@@ -1,8 +1,9 @@
 export { ask, extractive, sourcesFor, type AskOptions } from './answer.ts';
 export { buildBm25, expandQuery, searchBm25, tokenize, type Bm25Index } from './bm25.ts';
 export { chunk } from './chunk.ts';
-export { guard, normalise, MAX_QUESTION_CHARS, type GuardReason } from './guard.ts';
-export { BLOCKED_REPLY, checkOutput, outputFilter } from './outputguard.ts';
+export { resolveDomain, SITE_DOMAIN, type Domain } from './domain.ts';
+export { guard, normalise, MAX_QUESTION_CHARS, type GuardOptions, type GuardReason } from './guard.ts';
+export { ALLOWED_HOST, BLOCKED_REPLY, checkOutput, outputFilter } from './outputguard.ts';
 export { buildMessages, LEAK_SIGNATURES, makeCanary, SYSTEM_PROMPT } from './prompt.ts';
 export { embed, isTransient, streamChat, thinkStripper, type StreamOptions } from './providers.ts';
 export { buildIndex, cosine, fuse, retrieve, searchDense, type SearchIndex } from './retrieve.ts';

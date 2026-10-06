@@ -70,7 +70,10 @@ export function normalise(question: string): string {
   return s.replace(/\s+/g, ' ').trim();
 }
 
-export function guard(raw: unknown): GuardResult {
+export type GuardOptions = { privateTopics?: boolean; scopeReply?: string; privateReply?: string };
+
+export function guard(raw: unknown, options: GuardOptions = {}): GuardResult {
+  const scope = options.scopeReply ?? SCOPE;
   const question = String(raw ?? '').replace(/\s+/g, ' ').trim();
   if (!question) return { ok: false, reason: 'empty', reply: "Ask me anything about Rishabh's work, projects or skills." };
   if (question.length > MAX_QUESTION_CHARS) {
@@ -81,20 +84,24 @@ export function guard(raw: unknown): GuardResult {
 
   // A long unbroken run of base64-like text is an encoded instruction, not a question
   if (/[A-Za-z0-9+/]{28,}={0,2}/.test(question.replace(/https?:\/\/\S+/g, ''))) {
-    return { ok: false, reason: 'encoded', reply: SCOPE };
+    return { ok: false, reason: 'encoded', reply: scope };
   }
   // Optimised attack strings are dense with brackets, slashes and markup symbols; questions are not
   const symbols = (question.match(/[\\[\](){}<>|^~`*+]/g) ?? []).length;
   if (symbols >= 5 || (question.match(/\bq:/gi) ?? []).length >= 3) {
-    return { ok: false, reason: 'noise', reply: SCOPE };
+    return { ok: false, reason: 'noise', reply: scope };
   }
   // Patterns run on both the plain and the normalised question: undoing leetspeak would turn a
   // genuine "rot13" into "rotie" (found by the red team), so neither copy alone is enough
   const plain = question.toLowerCase();
   const matches = (patterns: RegExp[]) => patterns.some((r) => r.test(text) || r.test(plain));
-  if (matches(INJECTION)) return { ok: false, reason: 'injection', reply: SCOPE };
-  if (matches(PRIVATE)) {
-    return { ok: false, reason: 'private', reply: `That is not something I answer here. I stick to Rishabh's work, projects and skills. ${CONTACT}` };
+  if (matches(INJECTION)) return { ok: false, reason: 'injection', reply: scope };
+  if ((options.privateTopics ?? true) && matches(PRIVATE)) {
+    return {
+      ok: false,
+      reason: 'private',
+      reply: options.privateReply ?? `That is not something I answer here. I stick to Rishabh's work, projects and skills. ${CONTACT}`,
+    };
   }
   return { ok: true, question };
 }

@@ -5,18 +5,18 @@ export const BLOCKED_REPLY =
 
 export type OutputVerdict = { ok: true } | { ok: false; reason: 'canary' | 'prompt_leak' | 'markup' | 'external_link' };
 
-const ALLOWED_HOST = /^(?:[a-z0-9-]+\.)*rishabhray\.me$/i;
+export const ALLOWED_HOST = /^(?:[a-z0-9-]+\.)*rishabhray\.me$/i;
 
 /** Checks a full or partial answer for leaks and content the UI should never be handed. */
-export function checkOutput(text: string, canary: string): OutputVerdict {
+export function checkOutput(text: string, canary: string, signatures: string[] = LEAK_SIGNATURES, allowedHost: RegExp = ALLOWED_HOST): OutputVerdict {
   const flat = text.replace(/[​-‏⁠﻿]/g, '');
   if (flat.includes(canary)) return { ok: false, reason: 'canary' };
   const lower = flat.toLowerCase();
-  if (LEAK_SIGNATURES.some((s) => lower.includes(s.toLowerCase()))) return { ok: false, reason: 'prompt_leak' };
+  if (signatures.some((s) => lower.includes(s.toLowerCase()))) return { ok: false, reason: 'prompt_leak' };
   // Answers are plain text: markup or script in one is an injection attempt aimed at whoever renders it
   if (/<\s*(script|iframe|img|svg|a|style|object)\b|javascript:|on(error|load|click)\s*=/i.test(flat)) return { ok: false, reason: 'markup' };
   for (const m of flat.matchAll(/\bhttps?:\/\/([^\s/)\]]+)/gi)) {
-    if (!ALLOWED_HOST.test(m[1])) return { ok: false, reason: 'external_link' };
+    if (!allowedHost.test(m[1])) return { ok: false, reason: 'external_link' };
   }
   return { ok: true };
 }
@@ -25,7 +25,7 @@ export function checkOutput(text: string, canary: string): OutputVerdict {
  * Streams answer text through checkOutput, holding back the last `holdback` characters so a
  * leak is caught before its words reach the screen. A blocked answer is replaced, not cut off.
  */
-export function outputFilter(canary: string, holdback = 80) {
+export function outputFilter(canary: string, holdback = 80, signatures: string[] = LEAK_SIGNATURES, allowedHost: RegExp = ALLOWED_HOST) {
   let all = '';
   let sent = 0;
   let verdict: OutputVerdict = { ok: true };
@@ -34,7 +34,7 @@ export function outputFilter(canary: string, holdback = 80) {
     push(text: string): string | null {
       if (!verdict.ok) return null;
       all += text;
-      verdict = checkOutput(all, canary);
+      verdict = checkOutput(all, canary, signatures, allowedHost);
       if (!verdict.ok) return null;
       const safeTo = Math.max(sent, all.length - holdback);
       const out = all.slice(sent, safeTo);
