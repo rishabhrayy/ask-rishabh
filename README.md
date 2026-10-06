@@ -48,7 +48,7 @@ The question set ([`eval/site/questions.json`](eval/site/questions.json)) has 40
 | | Keyword only (BM25) |
 |---|---|
 | Hit@5 (a correct passage in the top 5) | 97.0% |
-| Mean reciprocal rank | 0.733 |
+| Mean reciprocal rank | 0.728 |
 | Must-refuse questions stopped before the model | 100% |
 
 The single miss is "What did he study?": the site says "Master of Artificial Intelligence" and never uses the word "study". Exactly the case embeddings exist for; the hybrid column goes here once it is measured.
