@@ -156,3 +156,12 @@ describe('ask', () => {
     expect(extractive([long], 'zzz')).toMatch(/word\.\.\. \[1\]$/);
   });
 });
+
+describe('house style', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('replaces em and en dashes in streamed answers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => sse('RAY/OS is a second brain—built on Claude [1].')));
+    const { text } = await collect(ask('What is NeighbourFit?', { index, providers: [provider('groq')] }));
+    expect(text).toBe('RAY/OS is a second brain - built on Claude [1].');
+  });
+});

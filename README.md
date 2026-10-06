@@ -72,7 +72,7 @@ for await (const event of ask('What is NeighbourFit?', { index, providers })) {
 npm test
 ```
 
-24 tests: tokenising, chunking, keyword and vector retrieval, rank fusion, the guard (what it refuses and what it lets through), stripping a reasoning model's `<think>` block even when its tags are split across chunks, and the full flow with the network mocked: provider fallback, every provider down, private and off-topic questions never reaching a model, and embeddings failing back to keywords.
+25 tests: tokenising, chunking, keyword and vector retrieval, rank fusion, the guard (what it refuses and what it lets through), replacing em dashes, stripping a reasoning model's `<think>` block even when its tags are split across chunks, and the full flow with the network mocked: provider fallback, every provider down, private and off-topic questions never reaching a model, and embeddings failing back to keywords.
 
 ## What is next
 

@@ -54,7 +54,8 @@ export async function* streamChat(
         } catch {
           continue;
         }
-        const text = strip(delta);
+        // House style: no em or en dashes in answers, whatever the model prefers
+        const text = strip(delta).replace(/\s*[—–]\s*/g, ' - ');
         if (!text) continue;
         if (!started) {
           started = true;
