@@ -13,6 +13,8 @@ export type AskOptions = {
   embedder?: Provider | null;
   k?: number;
   signal?: AbortSignal;
+  /** Called when a provider or the embedder fails, with no question text, so it is safe to log */
+  onError?: (stage: string, error: Error) => void;
 };
 
 const NOT_FOUND =
@@ -36,8 +38,9 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
   if (opts.embedder && opts.index.embeddings) {
     try {
       [queryVector] = await embed(opts.embedder, [question], { timeoutMs: 2500 });
-    } catch {
+    } catch (error) {
       queryVector = null; // keyword search alone is still a good answer
+      opts.onError?.(`embed:${opts.embedder.name}`, error as Error);
     }
   }
 
@@ -60,6 +63,7 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
       yield { type: 'done', mode: 'model', provider: provider.name };
       return;
     } catch (error) {
+      opts.onError?.(`chat:${provider.name}`, error as Error);
       if (wrote) {
         // The answer was cut off mid-way: say so rather than silently ending
         yield { type: 'delta', text: ' (The answer was cut short. The sources below have the rest.)' };
