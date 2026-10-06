@@ -36,5 +36,7 @@ export type Provider = {
 export type AskEvent =
   | { type: 'sources'; sources: { n: number; title: string; url: string }[] }
   | { type: 'delta'; text: string }
-  | { type: 'done'; mode: 'model' | 'fallback' | 'refused'; provider?: string }
+  /** Replaces everything shown so far: the output check blocked the answer */
+  | { type: 'replace'; text: string }
+  | { type: 'done'; mode: 'model' | 'fallback' | 'refused' | 'blocked' | 'smalltalk'; provider?: string; reason?: string }
   | { type: 'error'; message: string };

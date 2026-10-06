@@ -1,8 +1,10 @@
 import { expandQuery, tokenize } from './bm25.ts';
 import { guard } from './guard.ts';
-import { buildMessages } from './prompt.ts';
+import { BLOCKED_REPLY, outputFilter } from './outputguard.ts';
+import { buildMessages, makeCanary } from './prompt.ts';
 import { embed, isTransient, streamChat } from './providers.ts';
 import { retrieve, type SearchIndex } from './retrieve.ts';
+import { smallTalk } from './smalltalk.ts';
 import type { AskEvent, Hit, Provider } from './types.ts';
 
 export type AskOptions = {
@@ -37,10 +39,18 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
   const checked = guard(rawQuestion);
   if (!checked.ok) {
     yield { type: 'delta', text: checked.reply };
-    yield { type: 'done', mode: 'refused' };
+    yield { type: 'done', mode: 'refused', reason: checked.reason };
     return;
   }
   const question = checked.question;
+
+  // Greetings, thanks, "help", "start over", "ummm": answered instantly, no search or model
+  const chat = smallTalk(question);
+  if (chat) {
+    yield { type: 'delta', text: chat.reply };
+    yield { type: 'done', mode: 'smalltalk', reason: chat.kind };
+    return;
+  }
 
   let queryVector: number[] | null = null;
   if (opts.embedder && opts.index.embeddings) {
@@ -62,12 +72,14 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
   }
   if (!hits.length) {
     yield { type: 'delta', text: NOT_FOUND };
-    yield { type: 'done', mode: 'refused' };
+    yield { type: 'done', mode: 'refused', reason: 'not_found' };
     return;
   }
   yield { type: 'sources', sources: sourcesFor(hits) };
 
-  const messages = buildMessages(question, hits);
+  // A fresh canary per request: it can only appear in an answer if the prompt is leaking
+  const canary = makeCanary();
+  const messages = buildMessages(question, hits, canary);
   // The whole answer has a time budget: a visitor should get the fallback within it rather
   // than wait through every provider's full timeout one after another
   const start = Date.now();
@@ -78,18 +90,32 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
     // One quick retry on the same provider for a rate limit, overload or timeout
     for (let attempt = 0; attempt < 2 && remaining() > 2000; attempt++) {
       let wrote = false;
+      // Every answer passes the output check: a leak or markup replaces it before it is shown
+      const filter = outputFilter(canary);
       try {
         const maxWaitMs = Math.min(20000, remaining());
         for await (const text of streamChat(provider, messages, { signal: opts.signal, maxWaitMs })) {
           wrote = true;
-          yield { type: 'delta', text };
+          const safe = filter.push(text);
+          if (safe === null) break;
+          if (safe) yield { type: 'delta', text: safe };
         }
+        const tail = filter.flush();
+        if (tail === null) {
+          const verdict = filter.verdict;
+          yield { type: 'replace', text: BLOCKED_REPLY };
+          yield { type: 'done', mode: 'blocked', provider: provider.name, reason: verdict.ok ? undefined : verdict.reason };
+          return;
+        }
+        if (tail) yield { type: 'delta', text: tail };
         yield { type: 'done', mode: 'model', provider: provider.name };
         return;
       } catch (error) {
         opts.onError?.(`chat:${provider.name}${attempt ? ':retry' : ''}`, error as Error);
         if (wrote) {
-          // The answer was cut off mid-way: say so rather than silently ending
+          // The answer was cut off mid-way: show what passed the check, and say so
+          const tail = filter.flush();
+          if (tail) yield { type: 'delta', text: tail };
           yield { type: 'delta', text: ' (The answer was cut short. The sources below have the rest.)' };
           yield { type: 'done', mode: 'model', provider: provider.name };
           return;

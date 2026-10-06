@@ -59,8 +59,13 @@ for (const q of mustRefuse) {
 }
 const refusalPre = refused / mustRefuse.length;
 
+// --- false blocks: a stricter guard must never stop a real question ---
+const falseBlocks = answerable.filter((q) => !guard(q.q).ok);
+for (const q of falseBlocks) failures.push(`FALSE BLOCK  ${q.q}  -> ${(guard(q.q) as { reason: string }).reason}`);
+
 console.log(`\nRetrieval   hit@5 ${pct(hitAt5)}  MRR ${mrr.toFixed(3)}  (${answerable.length} questions)`);
 console.log(`Refusal     ${pct(refusalPre)} stopped by the guard before the model  (${mustRefuse.length} questions)`);
+console.log(`Guard       ${falseBlocks.length} real questions wrongly blocked`);
 
 // --- answers (optional, needs keys): citations on every answer, refusals held by the model ---
 let citation = 1;
@@ -110,6 +115,7 @@ const t = file.thresholds;
 const below = [
   hitAt5 < t.hitAt5 && `hit@5 ${pct(hitAt5)} < ${pct(t.hitAt5)}`,
   refusalPre < t.refusal && `refusal ${pct(refusalPre)} < ${pct(t.refusal)}`,
+  falseBlocks.length > 0 && `${falseBlocks.length} real questions blocked by the guard`,
   withAnswers && citation < t.citation && `citation ${pct(citation)} < ${pct(t.citation)}`,
 ].filter(Boolean);
 if (below.length) {

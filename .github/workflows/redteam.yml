@@ -1,0 +1,36 @@
+name: Red team
+
+# Attacks the assistant with the real models. Needs the GROQ_API_KEY and GEMINI_API_KEY
+# repository secrets; without them it runs the guard-only check and passes.
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'eval/redteam.json', 'eval/redteam.ts']
+  schedule:
+    - cron: '0 20 * * 0' # weekly, Monday 6am Melbourne: models change under you
+  workflow_dispatch:
+
+jobs:
+  redteam:
+    runs-on: ubuntu-latest
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Guard only
+        if: env.GROQ_API_KEY == '' && env.GEMINI_API_KEY == ''
+        run: npm run redteam
+      - name: Against the real models
+        if: env.GROQ_API_KEY != '' || env.GEMINI_API_KEY != ''
+        run: npm run redteam -- --live
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: redteam-results
+          path: eval/results/

@@ -1,6 +1,6 @@
 {
   "name": "ask-rishabh",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "description": "A small, measured RAG engine: hybrid retrieval, cited answers, model fallbacks, and an evaluation suite.",
   "type": "module",
   "license": "MIT",
@@ -19,7 +19,8 @@
     "eval": "tsx eval/run.ts",
     "build-index": "tsx scripts/build-index.ts",
     "build": "tsc -p tsconfig.build.json",
-    "prepare": "tsc -p tsconfig.build.json"
+    "prepare": "tsc -p tsconfig.build.json",
+    "redteam": "tsx eval/redteam.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
