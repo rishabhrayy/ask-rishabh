@@ -9,7 +9,9 @@ export type GuardResult = { ok: true; question: string } | { ok: false; reason: 
 const CONTACT = 'For anything else, email hi@rishabhray.me.';
 
 const PRIVATE = [
-  /\b(salary|pay|paid|earn|earning|wage|rate|money|compensation)\b.*\b(expect|want|ask|need|current|his|your)\b/i,
+  /\b(salary|salaries|compensation|remuneration|wages?|package|ctc)\b/i,
+  /\b(pay|paid|earn\w*|rate|money)\b.*\b(expect\w*|want\w*|ask\w*|need\w*|current\w*|his|your|range)\b/i,
+  /\bhow much\b.*\b(paid|pay|earns?|earning|make|makes|charges?)\b/i,
   /\b(how old|age|date of birth|born in|birthday)\b/i,
   /\b(girlfriend|boyfriend|wife|husband|partner|married|dating|relationship)\b/i,
   /\b(religion|religious|caste|politic|vote|voting)\b/i,

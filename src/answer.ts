@@ -17,6 +17,12 @@ export type AskOptions = {
   budgetMs?: number;
   /** Called when a provider or the embedder fails, with no question text, so it is safe to log */
   onError?: (stage: string, error: Error) => void;
+  /**
+   * Passage ids used when search finds nothing, e.g. an intro and an overview. Vague questions
+   * ("what else do you do?") share no words with any page, but are still about the subject;
+   * the model gets the overview and decides. Without them, such questions get "not found".
+   */
+  overviewIds?: string[];
 };
 
 const NOT_FOUND =
@@ -46,7 +52,14 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
     }
   }
 
-  const hits = retrieve(opts.index, question, queryVector, opts.k ?? 5);
+  let hits = retrieve(opts.index, question, queryVector, opts.k ?? 5);
+  // Nothing matched: fall back to the overview passages and let the model judge relevance.
+  // With no model available, the extractive answer then simply links those sections.
+  if (!hits.length && opts.overviewIds?.length) {
+    hits = opts.overviewIds
+      .flatMap((id) => opts.index.passages.filter((p) => p.docId === id).slice(0, 1))
+      .map((passage) => ({ passage, score: 0 }));
+  }
   if (!hits.length) {
     yield { type: 'delta', text: NOT_FOUND };
     yield { type: 'done', mode: 'refused' };

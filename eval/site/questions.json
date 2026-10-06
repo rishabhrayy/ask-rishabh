@@ -1,5 +1,5 @@
 {
-  "description": "Questions a recruiter or engineer might ask on rishabhray.me. `expect` lists doc ids that contain the answer (any one in the top 5 counts as a hit). `refuse` questions must not be answered.",
+  "description": "Questions a recruiter or engineer might ask on rishabhray.me. expect lists doc ids that contain the answer (any one in the top 5 counts as a hit). refuse: true must be stopped by the guard before any model call; refuse: \"model\" (off-topic) reaches the model, which must decline (checked with --answers).",
   "thresholds": {
     "hitAt5": 0.85,
     "refusal": 1,
@@ -310,11 +310,11 @@
     },
     {
       "q": "What is the capital of France?",
-      "refuse": true
+      "refuse": "model"
     },
     {
       "q": "Explain quantum chromodynamics",
-      "refuse": true
+      "refuse": "model"
     }
   ]
 }

@@ -12,7 +12,7 @@ It is built to be measured, not guessed at. Every change runs an evaluation in C
 question
   -> guard          length cap, private topics, prompt-injection patterns   (no model call)
   -> retrieve       BM25 keywords + embeddings, merged by reciprocal rank fusion
-  -> nothing found? "I couldn't find that on the site"                         (no model call)
+  -> nothing found? an overview of the site goes to the model, which judges relevance
   -> answer         Groq, then Gemini if Groq fails before writing anything
   -> every model down? the best-matching sentences from the passages, cited
 ```
@@ -22,7 +22,7 @@ Each step has a defined failure mode, so the visitor never sees a blank error:
 | If this fails | What happens |
 |---|---|
 | The question is private, off-limits or an injection attempt | A polite refusal from the guard, before any model is called |
-| The site has nothing on it | "I couldn't find that on the site", and the contact address |
+| Search finds nothing (a vague "what else do you do?") | The model gets an overview of the site and decides; off-topic questions are declined |
 | The embedding call is slow or rate-limited | Keyword search alone (2.5 s budget) |
 | The first model errors or is silent for 9 s | The next provider, as long as nothing was written yet |
 | A model fails mid-answer | The answer is marked as cut short, and the sources are still shown |
@@ -51,7 +51,7 @@ Keyword retrieval, 39 answerable questions:
 |---|---|---|---|
 | Hit@5 (a correct passage in the top 5) | 87.2% | 100% | 100% |
 | Mean reciprocal rank | 0.655 | 0.799 | **0.915** |
-| Must-refuse questions stopped before the model | 100% | 100% | 100% |
+| Private and injection questions stopped by the guard | 100% | 100% | 100% |
 
 - **Query expansion** maps the words visitors use to the words the site uses ("where else did you work" also searches "experience" and "record"). It came from a real miss on the live site.
 - **Title boost:** a passage whose title holds the question's words ranks above one that only mentions them, so "What is Outfit Picker?" lands on the Outfit Picker card, not a skills list naming it three times.
@@ -77,7 +77,7 @@ for await (const event of ask('What is NeighbourFit?', { index, providers })) {
 npm test
 ```
 
-29 tests: tokenising, chunking, keyword and vector retrieval, rank fusion, the guard (what it refuses and what it lets through), replacing em dashes, stripping a reasoning model's `<think>` block even when its tags are split across chunks, and the full flow with the network mocked: provider fallback, every provider down, private and off-topic questions never reaching a model, embeddings failing back to keywords, one retry on a busy provider (but not on a rejected request), and reasoning chunks counting as signs of life.
+34 tests: tokenising, chunking, keyword and vector retrieval, rank fusion, the guard (what it refuses and what it lets through), replacing em dashes, stripping a reasoning model's `<think>` block even when its tags are split across chunks, and the full flow with the network mocked: provider fallback, every provider down, private and off-topic questions never reaching a model, embeddings failing back to keywords, one retry on a busy provider (but not on a rejected request), and reasoning chunks counting as signs of life.
 
 ## What is next
 

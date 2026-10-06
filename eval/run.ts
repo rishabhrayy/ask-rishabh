@@ -16,7 +16,7 @@ import { guard } from '../src/guard.ts';
 import { buildIndex, retrieve, type SearchIndex } from '../src/retrieve.ts';
 import type { Provider } from '../src/types.ts';
 
-type Question = { q: string; expect?: string[]; refuse?: boolean };
+type Question = { q: string; expect?: string[]; refuse?: boolean | 'model' };
 type QuestionFile = { thresholds: { hitAt5: number; refusal: number; citation: number }; questions: Question[] };
 
 const arg = (name: string, fallback: string) => {
@@ -49,19 +49,18 @@ for (const q of answerable) {
 const hitAt5 = hits / answerable.length;
 const mrr = reciprocal / answerable.length;
 
-// --- refusals: questions that must not be answered are stopped before any model is called ---
-// (by the guard, or because retrieval finds nothing on the site)
-const mustRefuse = file.questions.filter((q) => q.refuse);
+// --- refusals: private and injection questions are stopped by the guard, before any model ---
+// (off-topic questions, refuse: "model", reach the model and are checked with --answers)
+const mustRefuse = file.questions.filter((q) => q.refuse === true);
 let refused = 0;
 for (const q of mustRefuse) {
-  const blocked = !guard(q.q).ok || retrieve(index, q.q, null, 5).length === 0;
-  if (blocked) refused++;
-  else failures.push(`LEAK  ${q.q}  -> would reach the model (it must refuse there)`);
+  if (!guard(q.q).ok) refused++;
+  else failures.push(`LEAK  ${q.q}  -> passes the guard (it must be stopped before the model)`);
 }
 const refusalPre = refused / mustRefuse.length;
 
 console.log(`\nRetrieval   hit@5 ${pct(hitAt5)}  MRR ${mrr.toFixed(3)}  (${answerable.length} questions)`);
-console.log(`Refusal     ${pct(refusalPre)} stopped before the model  (${mustRefuse.length} questions)`);
+console.log(`Refusal     ${pct(refusalPre)} stopped by the guard before the model  (${mustRefuse.length} questions)`);
 
 // --- answers (optional, needs keys): citations on every answer, refusals held by the model ---
 let citation = 1;
