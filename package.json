@@ -1,6 +1,6 @@
 {
   "name": "ask-rishabh",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "A small, measured RAG engine: hybrid retrieval, cited answers, model fallbacks, and an evaluation suite.",
   "type": "module",
   "license": "MIT",

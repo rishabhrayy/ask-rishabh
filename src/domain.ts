@@ -24,6 +24,8 @@ export type Domain = {
   smallTalk: Record<SmallTalk['kind'], string>;
   /** Hosts an answer may link to; any other link means the answer is withheld */
   allowedHosts: RegExp;
+  /** Opens the no-model answer shown when every provider is down */
+  fallbackIntro: string;
 };
 
 const CONTACT = 'For anything else, email hi@rishabhray.me.';
@@ -38,6 +40,7 @@ export const SITE_DOMAIN: Domain = {
   notFound: `I couldn't find that on the site. It covers Rishabh's projects, skills, experience and how he works. ${CONTACT}`,
   blockedReply: `I can't help with that here. I only answer questions about Rishabh's work, using what is on this site. ${CONTACT}`,
   allowedHosts: ALLOWED_HOST,
+  fallbackIntro: 'The AI model is unavailable right now, so here is what the site says:',
   smallTalk: {
     greeting: "Hi! Ask me anything about Rishabh's work: his projects, skills, experience, or how he builds things.",
     thanks: 'Glad that helped. Anything else you would like to know about his work?',

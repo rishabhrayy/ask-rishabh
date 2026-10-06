@@ -134,7 +134,7 @@ export async function* ask(rawQuestion: unknown, opts: AskOptions): AsyncGenerat
     }
   }
 
-  yield { type: 'delta', text: extractive(hits, question) };
+  yield { type: 'delta', text: extractive(hits, question, 3, domain.fallbackIntro) };
   yield { type: 'done', mode: 'fallback' };
 }
 
@@ -143,7 +143,7 @@ export function sourcesFor(hits: Hit[]) {
   return hits.map((h, i) => ({ n: i + 1, title: h.passage.title, url: h.passage.url }));
 }
 
-const FALLBACK_INTRO = 'The AI model is unavailable right now, so here is what the site says:';
+export const FALLBACK_INTRO = 'The AI model is unavailable right now, so here is what the site says:';
 
 /**
  * The no-model answer, so the visitor still gets something true and useful when every provider
@@ -151,7 +151,7 @@ const FALLBACK_INTRO = 'The AI model is unavailable right now, so here is what t
  * When no sentence is a strong match, it points to the closest sections instead of quoting
  * something that only shares a word with the question.
  */
-export function extractive(hits: Hit[], question = '', maxSentences = 3): string {
+export function extractive(hits: Hit[], question = '', maxSentences = 3, intro = FALLBACK_INTRO): string {
   const asked = new Set(tokenize(question));
   const terms = new Set(expandQuery(question));
   const candidates = hits.flatMap((h, i) => {
@@ -192,7 +192,7 @@ export function extractive(hits: Hit[], question = '', maxSentences = 3): string
       .map((h, i) => ({ title: h.passage.title, n: i + 1 }))
       .filter((s, i, all) => all.findIndex((t) => t.title === s.title) === i)
       .map((s) => `${s.title} [${s.n}]`);
-    return `The AI model is unavailable right now, and no single sentence on the site answers that directly. The closest sections are ${sections.join(', ')}.`;
+    return `The AI model is unavailable right now, and no single passage answers that directly. The closest sections are ${sections.join(', ')}.`;
   }
-  return `${FALLBACK_INTRO}\n\n${best.map((c) => `${c.text.replace(/[^.!?]$/, '$&.')} [${c.n}]`).join('\n')}`;
+  return `${intro}\n\n${best.map((c) => `${c.text.replace(/[^.!?]$/, '$&.')} [${c.n}]`).join('\n')}`;
 }
