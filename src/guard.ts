@@ -88,8 +88,12 @@ export function guard(raw: unknown): GuardResult {
   if (symbols >= 5 || (question.match(/\bq:/gi) ?? []).length >= 3) {
     return { ok: false, reason: 'noise', reply: SCOPE };
   }
-  if (INJECTION.some((r) => r.test(text))) return { ok: false, reason: 'injection', reply: SCOPE };
-  if (PRIVATE.some((r) => r.test(text))) {
+  // Patterns run on both the plain and the normalised question: undoing leetspeak would turn a
+  // genuine "rot13" into "rotie" (found by the red team), so neither copy alone is enough
+  const plain = question.toLowerCase();
+  const matches = (patterns: RegExp[]) => patterns.some((r) => r.test(text) || r.test(plain));
+  if (matches(INJECTION)) return { ok: false, reason: 'injection', reply: SCOPE };
+  if (matches(PRIVATE)) {
     return { ok: false, reason: 'private', reply: `That is not something I answer here. I stick to Rishabh's work, projects and skills. ${CONTACT}` };
   }
   return { ok: true, question };
