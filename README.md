@@ -43,15 +43,20 @@ npm run eval               # retrieval and refusal metrics, no keys needed (runs
 npm run eval -- --answers  # also checks that every model answer cites its claims (needs keys)
 ```
 
-The question set ([`eval/site/questions.json`](eval/site/questions.json)) has 40 questions a recruiter or engineer might ask, each labelled with the passages that answer it, plus questions that must be refused: salary, age, relationships, instruction-override attempts, and off-topic trivia. It runs against a snapshot of the site's index ([`eval/site/index.json`](eval/site/index.json)).
+The question set ([`eval/site/questions.json`](eval/site/questions.json)) has 46 questions a recruiter or engineer might ask, each labelled with the passages that answer it, plus questions that must be refused: salary, age, relationships, instruction-override attempts, and off-topic trivia. It runs against a snapshot of the site's index ([`eval/site/index.json`](eval/site/index.json)), rebuilt with the current engine code on every run.
 
-| | Keyword only (BM25) |
-|---|---|
-| Hit@5 (a correct passage in the top 5) | 97.0% |
-| Mean reciprocal rank | 0.728 |
-| Must-refuse questions stopped before the model | 100% |
+Keyword retrieval, 39 answerable questions:
 
-The single miss is "What did he study?": the site says "Master of Artificial Intelligence" and never uses the word "study". Exactly the case embeddings exist for; the hybrid column goes here once it is measured.
+| | Plain BM25 | + query expansion | + title boost |
+|---|---|---|---|
+| Hit@5 (a correct passage in the top 5) | 87.2% | 100% | 100% |
+| Mean reciprocal rank | 0.655 | 0.799 | **0.915** |
+| Must-refuse questions stopped before the model | 100% | 100% | 100% |
+
+- **Query expansion** maps the words visitors use to the words the site uses ("where else did you work" also searches "experience" and "record"). It came from a real miss on the live site.
+- **Title boost:** a passage whose title holds the question's words ranks above one that only mentions them, so "What is Outfit Picker?" lands on the Outfit Picker card, not a skills list naming it three times.
+
+To be honest about it: both fixes were written after seeing these misses, so the right-hand columns are measured on questions that informed them. The next step is a held-out set of new questions, to see how much of the gain generalises. In production, embeddings are added on top (hybrid search), which is what answers "What did he study?" when the site only ever says "Master of Artificial Intelligence".
 
 ## Use it
 
@@ -72,7 +77,7 @@ for await (const event of ask('What is NeighbourFit?', { index, providers })) {
 npm test
 ```
 
-25 tests: tokenising, chunking, keyword and vector retrieval, rank fusion, the guard (what it refuses and what it lets through), replacing em dashes, stripping a reasoning model's `<think>` block even when its tags are split across chunks, and the full flow with the network mocked: provider fallback, every provider down, private and off-topic questions never reaching a model, and embeddings failing back to keywords.
+26 tests: tokenising, chunking, keyword and vector retrieval, rank fusion, the guard (what it refuses and what it lets through), replacing em dashes, stripping a reasoning model's `<think>` block even when its tags are split across chunks, and the full flow with the network mocked: provider fallback, every provider down, private and off-topic questions never reaching a model, and embeddings failing back to keywords.
 
 ## What is next
 

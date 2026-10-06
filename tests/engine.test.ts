@@ -150,10 +150,18 @@ describe('ask', () => {
     expect(out).not.toContain('Melbourne suburb');
   });
 
-  it('extractive fallback opens the top passage when no sentence matches', () => {
-    const [hit] = retrieve(index, 'expo winner');
-    const long = { ...hit, passage: { ...hit.passage, text: 'word '.repeat(200) } };
-    expect(extractive([long], 'zzz')).toMatch(/word\.\.\. \[1\]$/);
+  it('extractive fallback points to sections rather than quoting a weak match', () => {
+    const hits = retrieve(index, 'expo winner');
+    const out = extractive(hits, 'zzz qqq');
+    expect(out).toContain('closest sections are NeighbourFit [1]');
+    expect(out).not.toContain('Expo winner');
+  });
+
+  it('query expansion finds experience for "where else did you work"', () => {
+    const withRecord = buildIndex(
+      chunk([...docs, { id: 'record', title: 'Track record and experience', url: '/#record', text: 'Sessional Teaching Associate at Monash. Brand operations at a design studio.' }]),
+    );
+    expect(retrieve(withRecord, 'where else did you work')[0].passage.docId).toBe('record');
   });
 });
 

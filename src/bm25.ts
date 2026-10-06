@@ -16,6 +16,27 @@ export function tokenize(text: string): string[] {
     .filter((t) => t && !STOP.has(t));
 }
 
+/**
+ * Visitors ask in their own words ("where else did you work?") and the site uses its own
+ * ("Track record and experience"). Each group maps the words people ask with to the words the
+ * site uses for that topic. Applied to the question only, so the index stays untouched.
+ */
+const EXPANSIONS: [string, string][] = [
+  ['work worked working job jobs employer employed employment career company companies experience role roles position', 'experience record role'],
+  ['study studied studying degree education university uni college qualification qualified graduate school', 'master monash university degree computer science'],
+  ['teach teaching taught tutor tutoring mentor mentoring lecture lecturer', 'mentor teaching associate student team'],
+  ['hire hiring contact reach email available availability', 'email contact open role'],
+  ['fun hobby hobbies weekend weekends outside free', 'photography camera weekend'],
+];
+const EXPAND = new Map<string, string[]>();
+for (const [asked, site] of EXPANSIONS) for (const word of tokenize(asked)) EXPAND.set(word, tokenize(site));
+
+/** The question's terms plus the site's words for the topics it asks about. */
+export function expandQuery(query: string): string[] {
+  const terms = tokenize(query);
+  return [...new Set([...terms, ...terms.flatMap((t) => EXPAND.get(t) ?? [])])];
+}
+
 /** A serialisable BM25 index: it is built once at deploy time and shipped as JSON. */
 export type Bm25Index = {
   k1: number;
@@ -44,8 +65,12 @@ export function buildBm25(passages: Passage[], k1 = 1.2, b = 0.75): Bm25Index {
   return { k1, b, avgLen, idf, docs };
 }
 
+/** How much a passage's score grows when its title contains every word the question asked */
+export const TITLE_BOOST = 0.6;
+
 export function searchBm25(index: Bm25Index, passages: Passage[], query: string, k = 8): Hit[] {
-  const terms = [...new Set(tokenize(query))];
+  const asked = [...new Set(tokenize(query))];
+  const terms = expandQuery(query);
   const { k1, b, avgLen, idf } = index;
   return index.docs
     .map((d, i) => {
@@ -54,6 +79,13 @@ export function searchBm25(index: Bm25Index, passages: Passage[], query: string,
         const f = d.tf[t];
         if (!f) continue;
         score += (idf[t] ?? 0) * ((f * (k1 + 1)) / (f + k1 * (1 - b + (b * d.len) / avgLen)));
+      }
+      // A passage titled with what was asked about is about it, not just mentioning it:
+      // "What is Outfit Picker?" should land on the Outfit Picker card, not a skills list
+      // that names Outfit Picker three times
+      if (score > 0 && asked.length) {
+        const title = new Set(tokenize(passages[i].title));
+        score *= 1 + TITLE_BOOST * (asked.filter((t) => title.has(t)).length / asked.length);
       }
       return { passage: passages[i], score };
     })

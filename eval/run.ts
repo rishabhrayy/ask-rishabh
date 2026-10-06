@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ask } from '../src/answer.ts';
 import { guard } from '../src/guard.ts';
-import { retrieve, type SearchIndex } from '../src/retrieve.ts';
+import { buildIndex, retrieve, type SearchIndex } from '../src/retrieve.ts';
 import type { Provider } from '../src/types.ts';
 
 type Question = { q: string; expect?: string[]; refuse?: boolean };
@@ -24,7 +24,10 @@ const arg = (name: string, fallback: string) => {
   return i > -1 ? process.argv[i + 1] : fallback;
 };
 const here = import.meta.dirname;
-const index = JSON.parse(fs.readFileSync(arg('--index', path.join(here, 'site', 'index.json')), 'utf8')) as SearchIndex;
+// Rebuild from the snapshot's passages, so the eval always measures the current engine code
+// rather than whatever version built the snapshot
+const snapshot = JSON.parse(fs.readFileSync(arg('--index', path.join(here, 'site', 'index.json')), 'utf8')) as SearchIndex;
+const index = buildIndex(snapshot.passages, snapshot.embeddings);
 const file = JSON.parse(fs.readFileSync(arg('--questions', path.join(here, 'site', 'questions.json')), 'utf8')) as QuestionFile;
 const withAnswers = process.argv.includes('--answers');
 

@@ -1,4 +1,4 @@
-import { tokenize } from './bm25.ts';
+import { expandQuery, tokenize } from './bm25.ts';
 import { guard } from './guard.ts';
 import { buildMessages } from './prompt.ts';
 import { embed, streamChat } from './providers.ts';
@@ -88,23 +88,32 @@ const FALLBACK_INTRO = 'The AI model is unavailable right now, so here is what t
 /**
  * The no-model answer, so the visitor still gets something true and useful when every provider
  * is down: the sentences from the retrieved passages that best match the question, each cited.
- * If no sentence shares a word with the question, it falls back to the opening of the top passage.
+ * When no sentence is a strong match, it points to the closest sections instead of quoting
+ * something that only shares a word with the question.
  */
 export function extractive(hits: Hit[], question = '', maxSentences = 3): string {
-  const terms = new Set(tokenize(question));
-  const candidates = hits.flatMap((h, i) =>
-    h.passage.text
+  const asked = new Set(tokenize(question));
+  const terms = new Set(expandQuery(question));
+  const candidates = hits.flatMap((h, i) => {
+    // A sentence inherits its passage's title: on the Outfit Picker card, "A local-first PWA
+    // wardrobe" is about Outfit Picker even though it never repeats the name
+    const title = tokenize(h.passage.title);
+    return h.passage.text
       .split(/\n+|(?<=[.!?])\s+/)
       .map((s) => s.trim())
       .filter((s) => s.length >= 25 && s.length <= 320 && !s.endsWith('?'))
       .map((s, j) => {
-        const words = tokenize(s);
-        const overlap = new Set(words.filter((w) => terms.has(w))).size;
+        const words = new Set([...title, ...tokenize(s)]);
+        // The question's own words count one each; the expansion's words ("experience" for
+        // "work") count once in total, so they can lift a sentence but never outvote the question
+        const own = [...asked].filter((w) => words.has(w)).length;
+        const expanded = [...terms].some((w) => !asked.has(w) && words.has(w)) ? 1 : 0;
+        const overlap = own + expanded;
         // Retrieval already ranked the passages, so a sentence's word overlap is discounted by its
         // passage's rank; earlier sentences win exact ties
         return { text: s, n: i + 1, score: overlap / (1 + 0.25 * i) - j * 0.001, overlap };
-      }),
-  );
+      });
+  });
   const ranked = candidates.filter((c) => c.overlap > 0).sort((a, b) => b.score - a.score);
   // A sentence sharing a single common word ("work") is noise unless it sits next to the best match
   const anchor = ranked[0]?.n;
@@ -113,10 +122,17 @@ export function extractive(hits: Hit[], question = '', maxSentences = 3): string
     .filter((c, i, all) => all.findIndex((d) => d.text === c.text) === i)
     .slice(0, maxSentences);
 
-  if (!best.length) {
-    const top = hits[0].passage.text;
-    const opening = top.length > 360 ? `${top.slice(0, 360).replace(/\s+\S*$/, '')}...` : top;
-    return `${FALLBACK_INTRO}\n\n${opening} [1]`;
+  // Strong: the best sentence shares two of the question's words, or its only word, or it comes
+  // from the passage retrieval ranked first. Anything weaker gets section links, not a quote.
+  const strong =
+    best.length > 0 && (best[0].overlap >= Math.min(2, Math.max(1, asked.size)) || best[0].n === 1);
+  if (!strong) {
+    const sections = hits
+      .slice(0, 3)
+      .map((h, i) => ({ title: h.passage.title, n: i + 1 }))
+      .filter((s, i, all) => all.findIndex((t) => t.title === s.title) === i)
+      .map((s) => `${s.title} [${s.n}]`);
+    return `The AI model is unavailable right now, and no single sentence on the site answers that directly. The closest sections are ${sections.join(', ')}.`;
   }
   return `${FALLBACK_INTRO}\n\n${best.map((c) => `${c.text.replace(/[^.!?]$/, '$&.')} [${c.n}]`).join('\n')}`;
 }
