@@ -175,6 +175,12 @@ describe('house style', () => {
     const { text } = await collect(ask('What is NeighbourFit?', { index, providers: [provider('groq')] }));
     expect(text).toBe('RAY/OS is a second brain - built on Claude [1].');
   });
+
+  it('turns full-width citation brackets into the [n] the UI links', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => sse('It was red-teamed with 75 attacks【4】 and won an award【2†source】.')));
+    const { text } = await collect(ask('What is NeighbourFit?', { index, providers: [provider('groq')] }));
+    expect(text).toBe('It was red-teamed with 75 attacks[4] and won an award[2].');
+  });
 });
 
 describe('resilience', () => {

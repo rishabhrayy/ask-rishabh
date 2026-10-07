@@ -71,8 +71,11 @@ export async function* streamChat(
         } catch {
           continue;
         }
-        // House style: no em or en dashes in answers, whatever the model prefers
-        const text = strip(delta).replace(/\s*[—–]\s*/g, ' - ');
+        // House style: no em or en dashes in answers, whatever the model prefers. Some models cite
+        // with full-width brackets (【2】 or 【2†source】); the UI links [2], so they are made plain
+        const text = strip(delta)
+          .replace(/\s*[—–]\s*/g, ' - ')
+          .replace(/【(\d+)(?:†[^】]*)?】/g, '[$1]');
         if (!text) continue;
         if (!started) {
           started = true;
